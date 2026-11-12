@@ -12,6 +12,12 @@ api.interceptors.request.use((config) => {
 });
 
 export function getErrorMessage(error) {
+  if (axios.isAxiosError(error) && error.code === "ERR_NETWORK") {
+    return `Cannot reach the API at ${api.defaults.baseURL}. Start the backend and check its MongoDB configuration.`;
+  }
+  if (axios.isAxiosError(error) && error.code === "ECONNABORTED") {
+    return "The API request timed out. Check that the backend and database are running, then try again.";
+  }
   return error.response?.data?.error?.message ?? error.message ?? "Something went wrong";
 }
 

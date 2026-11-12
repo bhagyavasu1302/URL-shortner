@@ -90,6 +90,15 @@ Redirect reads are expected to far outnumber link writes: a single link can be o
 
 4. Open the Vite URL (usually `http://localhost:5173`), create an account, and make a link. The API listens on port `4000`.
 
+### Troubleshooting sign-in network errors
+
+The frontend and API are separate processes. A sign-in “Network Error” means the browser could not reach the API; it is not an incorrect-password response.
+
+1. Copy `backend/.env.example` to `backend/.env`. Set `MONGODB_URI` to a reachable MongoDB instance (local MongoDB or an Atlas connection string) and set `JWT_SECRET` to a random secret of at least 32 characters.
+2. From the repository root, run `npm run dev`. The API should print “Connected to MongoDB” and “URL shortener API listening on port 4000”; the frontend runs on port `5173`.
+3. Check `http://localhost:4000/health` returns `{"status":"ok"}`. If it does not, read the backend terminal output: missing/invalid environment settings or an unavailable MongoDB connection prevent the API from starting.
+4. If the frontend uses a different port or the API is hosted remotely, set `CLIENT_URL` in the backend environment and `VITE_API_URL` in the frontend environment to the matching origins, then restart both processes.
+
 ### Environment variables
 
 | Variable                | Service | Description                                                                                                    |
