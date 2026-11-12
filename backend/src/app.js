@@ -43,8 +43,10 @@ const redirectLimiter = rateLimit({
 });
 
 app.get("/health", (_req, res) => res.json({ status: "ok" }));
+app.get("/api/health", (_req, res) => res.json({ status: "ok" }));
 app.use("/api/auth", authLimiter, authRoutes);
 app.use("/api/urls", createLimiter, urlRoutes);
 app.get("/:shortCode", redirectLimiter, asyncHandler(redirect));
+app.get("/api/redirect/:shortCode", redirectLimiter, asyncHandler(redirect));
 app.use(notFoundHandler);
 app.use(errorHandler);

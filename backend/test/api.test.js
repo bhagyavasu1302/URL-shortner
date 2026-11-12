@@ -5,6 +5,7 @@ import { MongoMemoryServer } from "mongodb-memory-server";
 import { app } from "../src/app.js";
 import { Click } from "../src/models/Click.js";
 import { Url } from "../src/models/Url.js";
+import vercelHandler from "../../api/[...path].js";
 
 let mongo;
 let token;
@@ -38,6 +39,22 @@ afterAll(async () => {
 });
 
 describe("URL API", () => {
+  test("serves a Vercel-compatible health route and redirect rewrite", async () => {
+    await request(vercelHandler).get("/api/health").expect(200, { status: "ok" });
+
+    const created = await request(app)
+      .post("/api/urls")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ originalUrl: "https://example.com/vercel-route" })
+      .expect(201);
+    const { shortCode } = created.body.data.url;
+
+    await request(vercelHandler)
+      .get(`/api/redirect/${shortCode}`)
+      .expect(302)
+      .expect("Location", "https://example.com/vercel-route");
+  });
+
   test("requires authentication for link creation", async () => {
     const response = await request(app)
       .post("/api/urls")

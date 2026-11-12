@@ -64,6 +64,8 @@ Redirect reads are expected to far outnumber link writes: a single link can be o
 │   │   ├── utils/        # Code generation, errors, URL checks
 │   │   └── validation/   # Zod request schemas
 │   └── test/             # Unit and API integration tests
+├── api/
+│   └── [...path].js      # Vercel serverless Express entry point
 ├── frontend/
 │   └── src/
 │       ├── api/          # Axios service client
@@ -71,6 +73,7 @@ Redirect reads are expected to far outnumber link writes: a single link can be o
 │       ├── context/      # Authentication state
 │       └── pages/        # Home, auth, dashboard, analytics
 ├── package.json          # npm workspaces and root scripts
+├── vercel.json           # Vercel build and routing configuration
 └── README.md
 ```
 
@@ -111,7 +114,7 @@ The frontend and API are separate processes. A sign-in “Network Error” means
 | `CLIENT_URL`            | API     | Exact frontend origin allowed by CORS                                                                          |
 | `PUBLIC_SHORT_URL_BASE` | API     | Public origin used to construct shareable links; in production this must route to the Express redirect service |
 | `TRUST_PROXY`           | API     | Set `true` only when deployed behind a trusted proxy/load balancer                                             |
-| `VITE_API_URL`          | Web     | API base URL including `/api`                                                                                  |
+| `VITE_API_URL`          | Web     | Optional API base URL including `/api`; production defaults to same-origin `/api`                              |
 
 ## API reference
 
@@ -130,6 +133,7 @@ All successful JSON responses use `{ "data": ... }`. Errors use `{ "error": { "c
 | `DELETE` | `/api/urls/:id`                   |  Yes | —                                                                    | `204`; also deletes click events                                  |
 | `GET`    | `/:shortCode`                     |   No | Short code in path                                                   | `302` `Location` to destination; `410` expired; `404` unavailable |
 | `GET`    | `/health`                         |   No | —                                                                    | `200` `{ "status": "ok" }`                                        |
+| `GET`    | `/api/health`                     |   No | —                                                                    | `200` `{ "status": "ok" }`; Vercel-compatible health route        |
 
 The API limits auth attempts, link-management traffic, and redirects by IP. URL validation accepts only HTTP(S), rejects embedded credentials, local/private literal destinations, and links back to the configured short-link host. These checks reduce common misuse; they are **not** a phishing or malware-detection service.
 
@@ -145,11 +149,26 @@ The backend tests use `mongodb-memory-server`; its first test run may need to do
 
 ## Deployment
 
-1. Create a MongoDB Atlas database and restrict network access to the deployed API. Use a least-privilege database user.
-2. Deploy the backend to Render or Railway from the repository root. Build/install with `npm ci`; start with `npm run start -w backend`. Configure all API variables from the table above. Set `NODE_ENV=production`, the frontend's exact HTTPS origin in `CLIENT_URL`, and your public short-link API origin in `PUBLIC_SHORT_URL_BASE`.
-3. Deploy the Vite app to Vercel or Netlify from the repository root with build command `npm run build -w frontend` and output directory `frontend/dist`. Set `VITE_API_URL` to the deployed API's `/api` URL. The included root `vercel.json` supports React Router deep links on Vercel; on Netlify add a SPA rewrite to `/index.html`.
-4. Use HTTPS for both services. Confirm the API health endpoint, register/login, create a link, follow a redirect, and verify analytics.
-5. If using a custom short domain, point DNS and TLS at the redirect service and set `PUBLIC_SHORT_URL_BASE` to that domain. Do not set it to the frontend domain unless the frontend host is configured to proxy short-code paths to Express.
+### Vercel: deploy the full app from this repository
+
+The root `vercel.json` builds the Vite frontend as a static site and deploys the Express API as a Node serverless function. The same deployment serves the UI, `/api/...` endpoints, and short links, so the frontend uses same-origin API requests and does not need a separate backend host.
+
+1. Create a MongoDB Atlas database and use a least-privilege database user. Configure Atlas Network Access for your Vercel deployment; if your Vercel plan does not provide static outbound IPs, use an appropriate network-access strategy and protect the database with a strong password and minimum privileges.
+2. In Vercel, **Add New → Project**, import this repository, and leave **Root Directory** set to the repository root (do not select `frontend`).
+3. Keep the build settings from `vercel.json`: install command `npm install`, build command `npm run build -w frontend`, and output directory `frontend/dist`.
+4. Add these environment variables in the Vercel project settings for **Production**, and Preview too if you want preview deployments to use the database:
+   - `MONGODB_URI`: your Atlas connection string.
+   - `JWT_SECRET`: a randomly generated secret with at least 32 characters.
+   - `NODE_ENV`: `production`.
+   - `CLIENT_URL`: the exact production site origin, such as `https://your-project.vercel.app` (no trailing slash).
+   - `PUBLIC_SHORT_URL_BASE`: the public origin used for links, such as `https://your-project.vercel.app` (no trailing slash). Set this to your custom domain if you add one.
+   - `TRUST_PROXY`: `true` (Vercel runs behind its proxy; this also makes IP-based rate limiting use the forwarded client IP).
+5. Do **not** set `VITE_API_URL` for the one-project deployment: the production frontend defaults to the same-origin `/api`. If you override it, set it to a same-origin `/api` path, not a localhost URL.
+6. Deploy. Verify `/api/health` returns `{"status":"ok"}`, then register, create a short link, open it in a private tab, and confirm the click appears in analytics.
+
+The Vercel function at `api/[...path].js` reuses Mongoose's connection within a warm function instance. Each short-link request is rewritten to the redirect API function; React Router paths are rewritten to the SPA entry point. Serverless instances can still cold-start and the in-memory rate limiter is per instance, so this is a good project/demo deployment rather than a globally coordinated high-traffic service.
+
+For split deployments (for example a static frontend on Vercel and API on Render/Railway), deploy only the frontend to Vercel, set `VITE_API_URL` to the external API's `/api`, and configure that API's `CLIENT_URL` and `PUBLIC_SHORT_URL_BASE`. A frontend-only Vercel deployment cannot serve redirects on the frontend domain unless the redirect API is also routed there.
 
 ## Security notes and trade-offs
 
